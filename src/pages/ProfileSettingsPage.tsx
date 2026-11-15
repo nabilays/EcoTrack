@@ -19,25 +19,23 @@ export const ProfileSettingsPage: React.FC = () => {
     changeOwnPassword,
     updateSystemSettings,
     resetDemoData,
+    resetAllAccountsAndData,
     logout,
     pushToast,
   } = useEcoTrack();
 
   const isAdmin = hasPermission(currentUser, 'settings:manage');
 
-  // Profile state
   const [fullName, setFullName] = useState(currentUser?.fullName || '');
   const [username, setUsername] = useState(currentUser?.username || '');
   const [email, setEmail] = useState(currentUser?.email || '');
   const [classOrUnit, setClassOrUnit] = useState(currentUser?.classOrUnit || '');
   const [avatarUrl, setAvatarUrl] = useState(currentUser?.avatarUrl || '');
 
-  // Password state
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
-  // System settings state (Admin only)
   const [schoolName, setSchoolName] = useState(settings.schoolName);
   const [schoolAddress, setSchoolAddress] = useState(settings.schoolAddress);
   const [academicYear, setAcademicYear] = useState(settings.academicYear);
@@ -48,6 +46,7 @@ export const ProfileSettingsPage: React.FC = () => {
   const [procPrefix, setProcPrefix] = useState(settings.processingCodePrefix);
 
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+  const [wipeAccountsOpen, setWipeAccountsOpen] = useState(false);
 
   if (!currentUser) return null;
 
@@ -125,12 +124,19 @@ export const ProfileSettingsPage: React.FC = () => {
     }
   };
 
-  const handleResetDemo = () => {
+  const handleResetData = () => {
     const res = resetDemoData();
     if (res.success) {
-      pushToast('info', 'Data prototipe berhasil dikembalikan ke kondisi awal.');
+      pushToast('info', 'Seluruh data operasional berhasil dikosongkan.');
     } else {
-      pushToast('error', res.message || 'Gagal mereset data.');
+      pushToast('error', res.message || 'Gagal mengosongkan data.');
+    }
+  };
+
+  const handleWipeAllAccounts = () => {
+    const res = resetAllAccountsAndData();
+    if (!res.success) {
+      pushToast('error', res.message || 'Gagal menghapus seluruh akun.');
     }
   };
 
@@ -323,14 +329,24 @@ export const ProfileSettingsPage: React.FC = () => {
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setResetConfirmOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-[#D8E2DC] px-3 py-1.5 text-xs font-medium text-[#3E4E45] hover:bg-[#F6F8F6]"
-            >
-              <RotateCcw className="h-3.5 w-3.5" />
-              <span>Reset Data Demo</span>
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setResetConfirmOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-[#D8E2DC] px-3 py-1.5 text-xs font-medium text-[#3E4E45] hover:bg-[#F6F8F6]"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                <span>Kosongkan Data Operasional</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setWipeAccountsOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-medium text-[#7F1D1D] hover:bg-red-50"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                <span>Hapus Semua Akun &amp; Reset Total</span>
+              </button>
+            </div>
           </div>
 
           <form onSubmit={handleSaveSystem} className="space-y-4">
@@ -365,7 +381,7 @@ export const ProfileSettingsPage: React.FC = () => {
                 </label>
                 <input
                   type="number"
-                  min={1}
+                  min={0}
                   max={100}
                   required
                   value={targetDiversion}
@@ -379,9 +395,9 @@ export const ProfileSettingsPage: React.FC = () => {
                 </label>
                 <input
                   type="text"
-                  required
                   value={schoolAddress}
                   onChange={(e) => setSchoolAddress(e.target.value)}
+                  placeholder="Masukkan alamat sekolah"
                   className="w-full rounded-lg border border-[#CFDAD2] px-3 py-2 text-sm text-[#14201A]"
                 />
               </div>
@@ -431,11 +447,21 @@ export const ProfileSettingsPage: React.FC = () => {
       <ConfirmDialog
         open={resetConfirmOpen}
         onClose={() => setResetConfirmOpen(false)}
-        onConfirm={handleResetDemo}
-        title="Reset Data Prototipe?"
-        message="Seluruh perubahan data sampah, pengolahan, kategori, dan pengguna akan dikembalikan ke data awal prototipe."
-        confirmLabel="Ya, Reset Data"
-        destructive={false}
+        onConfirm={handleResetData}
+        title="Kosongkan Data Operasional?"
+        message="Seluruh data sampah, pengolahan, kategori, kegiatan, dan akun pengguna selain akun Administrator Anda akan dikosongkan ke kondisi awal (0)."
+        confirmLabel="Ya, Kosongkan Data"
+        destructive
+      />
+
+      <ConfirmDialog
+        open={wipeAccountsOpen}
+        onClose={() => setWipeAccountsOpen(false)}
+        onConfirm={handleWipeAllAccounts}
+        title="Hapus Semua Akun & Reset Total?"
+        message="Seluruh akun (termasuk akun Admin Anda, Petugas, dan Siswa) serta seluruh data operasional akan dihapus permanen. Anda akan langsung keluar ke halaman Login awal."
+        confirmLabel="Ya, Hapus Semua Akun"
+        destructive
       />
     </div>
   );

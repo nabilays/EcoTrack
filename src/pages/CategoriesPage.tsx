@@ -6,10 +6,14 @@ import { WasteCategory, WasteType } from '../types';
 import { formatWeight } from '../utils/formatters';
 import { Modal } from '../components/ui/Modal';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
+import { DataErrorBanner, EmptyStatePanel } from '../components/ui/DataStateNotice';
 
 export const CategoriesPage: React.FC = () => {
   const {
     currentUser,
+    dataStatus,
+    dataError,
+    retryLoadData,
     categories,
     getCategoryTotalWeight,
     addCategory,
@@ -144,7 +148,7 @@ export const CategoriesPage: React.FC = () => {
 
       {items.length === 0 ? (
         <div className="p-6 text-center text-sm text-[#55665C]">
-          Tidak ada kategori pada kelompok ini sesuai filter.
+          Belum ada kategori pada kelompok {title}.
         </div>
       ) : (
         <div className="divide-y divide-[#E6ECE7]">
@@ -163,7 +167,7 @@ export const CategoriesPage: React.FC = () => {
                   </div>
                   <h3 className="mt-1 text-sm font-semibold text-[#14201A]">{cat.name}</h3>
                   <p className="mt-0.5 text-xs leading-relaxed text-[#55665C]">
-                    {cat.description}
+                    {cat.description || '-'}
                   </p>
                 </div>
 
@@ -219,6 +223,10 @@ export const CategoriesPage: React.FC = () => {
 
   return (
     <div className="space-y-5">
+      {dataStatus === 'error' && dataError && (
+        <DataErrorBanner message={dataError} onRetry={retryLoadData} />
+      )}
+
       {/* Toolbar */}
       <div className="flex flex-col gap-3 rounded-xl border border-[#DCE4DE] bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-center">
@@ -263,23 +271,44 @@ export const CategoriesPage: React.FC = () => {
         )}
       </div>
 
-      <div className="space-y-6">
-        {(typeFilter === 'ALL' || typeFilter === WasteType.ORGANIK) &&
-          renderGroup(
-            'ORGANIK',
-            'Sampah mudah terurai secara biologis (sisa makanan, daun, kulit buah)',
-            organicCategories,
-            Leaf
-          )}
+      {categories.length === 0 ? (
+        <div className="rounded-xl border border-[#DCE4DE] bg-white p-6">
+          <EmptyStatePanel
+            title="Belum ada kategori sampah"
+            description="Kategori sampah Organik (seperti sisa makanan, daun, kulit buah) dan Anorganik (plastik, kertas, kaca, logam) belum dibuat. Tambahkan kategori pertama untuk mulai mengklasifikasikan sampah sekolah."
+            action={
+              canWrite ? (
+                <button
+                  type="button"
+                  onClick={openCreate}
+                  className="inline-flex items-center gap-2 rounded-lg bg-[#1B4332] px-4 py-2 text-xs font-medium text-white hover:bg-[#132A1F]"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span>Tambah Kategori</span>
+                </button>
+              ) : undefined
+            }
+          />
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {(typeFilter === 'ALL' || typeFilter === WasteType.ORGANIK) &&
+            renderGroup(
+              'ORGANIK',
+              'Sampah mudah terurai secara biologis',
+              organicCategories,
+              Leaf
+            )}
 
-        {(typeFilter === 'ALL' || typeFilter === WasteType.ANORGANIK) &&
-          renderGroup(
-            'ANORGANIK',
-            'Sampah bernilai daur ulang (plastik, kertas, kaca, logam)',
-            inorganicCategories,
-            Recycle
-          )}
-      </div>
+          {(typeFilter === 'ALL' || typeFilter === WasteType.ANORGANIK) &&
+            renderGroup(
+              'ANORGANIK',
+              'Sampah bernilai daur ulang',
+              inorganicCategories,
+              Recycle
+            )}
+        </div>
+      )}
 
       {/* Add / Edit Modal */}
       <Modal
@@ -304,7 +333,7 @@ export const CategoriesPage: React.FC = () => {
                 required
                 value={formName}
                 onChange={(e) => setFormName(e.target.value)}
-                placeholder="Contoh: Kardus"
+                placeholder="Contoh: Sisa makanan / Plastik"
                 className="w-full rounded-lg border border-[#CFDAD2] px-3 py-2 text-sm text-[#14201A] focus:border-[#2D6A4F] focus:outline-none"
               />
             </div>

@@ -15,10 +15,14 @@ import { ProcessingStatus, UserRole, WasteType } from '../types';
 import { formatDateId, formatMonthShort, formatNumber, formatWeight, getMonthKey } from '../utils/formatters';
 import { exportReportToExcel, exportReportToPDF } from '../utils/exportReports';
 import { ProcessingStatusText, WasteTypeText } from '../components/ui/StatusIndicator';
+import { DataErrorBanner, EmptyStatePanel } from '../components/ui/DataStateNotice';
 
 export const ReportsPage: React.FC = () => {
   const {
     currentUser,
+    dataStatus,
+    dataError,
+    retryLoadData,
     wasteRecords,
     processingRecords,
     categories,
@@ -31,8 +35,8 @@ export const ReportsPage: React.FC = () => {
     hasPermission(currentUser, 'reports:operational');
   const isSiswa = currentUser?.role === UserRole.SISWA;
 
-  const [dateFrom, setDateFrom] = useState('2026-07-01');
-  const [dateTo, setDateTo] = useState('2026-12-31');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('ALL');
   const [activeTab, setActiveTab] = useState<'intake' | 'type' | 'processing'>('intake');
 
@@ -126,10 +130,19 @@ export const ReportsPage: React.FC = () => {
       });
   }, [categories, filteredWaste, categoryFilter]);
 
-  const periodLabel = `${formatDateId(dateFrom)} – ${formatDateId(dateTo)}`;
+  const periodLabel =
+    dateFrom || dateTo
+      ? `${dateFrom ? formatDateId(dateFrom) : 'Awal'} – ${dateTo ? formatDateId(dateTo) : 'Sekarang'}`
+      : 'Semua Periode';
+
+  const hasReportData = filteredWaste.length > 0 || filteredProcessing.length > 0;
 
   const handleExportPdf = () => {
     if (!currentUser) return;
+    if (!hasReportData) {
+      pushToast('info', 'Belum ada data aktual untuk diekspor ke PDF.');
+      return;
+    }
     exportReportToPDF({
       schoolName: settings.schoolName,
       generatedBy: currentUser.fullName,
@@ -144,6 +157,10 @@ export const ReportsPage: React.FC = () => {
 
   const handleExportExcel = () => {
     if (!currentUser) return;
+    if (!hasReportData) {
+      pushToast('info', 'Belum ada data aktual untuk diekspor ke Excel.');
+      return;
+    }
     exportReportToExcel({
       schoolName: settings.schoolName,
       generatedBy: currentUser.fullName,
@@ -163,6 +180,10 @@ export const ReportsPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {dataStatus === 'error' && dataError && (
+        <DataErrorBanner message={dataError} onRetry={retryLoadData} />
+      )}
+
       {/* Filter & Export Bar */}
       <section className="rounded-xl border border-[#DCE4DE] bg-white p-4">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -206,16 +227,18 @@ export const ReportsPage: React.FC = () => {
             <div className="flex flex-wrap items-center gap-2 shrink-0">
               <button
                 type="button"
+                disabled={!hasReportData}
                 onClick={handleExportPdf}
-                className="inline-flex items-center gap-2 rounded-lg border border-[#D8E2DC] bg-white px-3.5 py-2 text-sm font-medium text-[#14201A] hover:bg-[#F6F8F6] whitespace-nowrap"
+                className="inline-flex items-center gap-2 rounded-lg border border-[#D8E2DC] bg-white px-3.5 py-2 text-sm font-medium text-[#14201A] hover:bg-[#F6F8F6] disabled:cursor-not-allowed disabled:opacity-50 whitespace-nowrap"
               >
                 <FileText className="h-4 w-4 text-[#B91C1C]" />
                 <span>Ekspor PDF</span>
               </button>
               <button
                 type="button"
+                disabled={!hasReportData}
                 onClick={handleExportExcel}
-                className="inline-flex items-center gap-2 rounded-lg bg-[#1B4332] px-3.5 py-2 text-sm font-medium text-white hover:bg-[#132A1F] whitespace-nowrap"
+                className="inline-flex items-center gap-2 rounded-lg bg-[#1B4332] px-3.5 py-2 text-sm font-medium text-white hover:bg-[#132A1F] disabled:cursor-not-allowed disabled:opacity-50 whitespace-nowrap"
               >
                 <FileSpreadsheet className="h-4 w-4" />
                 <span>Ekspor Excel</span>
@@ -272,12 +295,13 @@ export const ReportsPage: React.FC = () => {
           </div>
           {canExport && <Download className="h-4 w-4 text-[#52796F]" />}
         </div>
-        <div className="h-[270px] w-full">
-          {chartData.length === 0 ? (
-            <div className="flex h-full items-center justify-center text-sm text-[#55665C]">
-              Tidak ada data pada rentang tanggal dan kategori yang dipilih.
-            </div>
-          ) : (
+        {chartData.length === 0 ? (
+          <EmptyStatePanel
+            title="Belum ada data laporan"
+            description="Grafik laporan hanya dihitung dari data aktual sampah masuk dan pengolahan. Catat data sampah terlebih dahulu untuk melihat grafik periode."
+          />
+        ) : (
+          <div className="h-[270px] w-full">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartData} margin={{ top: 8, right: 12, left: -12, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#E6ECE7" vertical={false} />
@@ -289,8 +313,8 @@ export const ReportsPage: React.FC = () => {
                 <Bar dataKey="diolah" name="Selesai Diolah" fill="#1B4332" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
-          )}
-        </div>
+          </div>
+        )}
       </section>
 
       {/* Recap Tables */}
@@ -359,25 +383,36 @@ export const ReportsPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#E6ECE7]">
-                {filteredWaste.map((w) => (
-                  <tr key={w.id} className="hover:bg-[#FAFBF9]">
-                    <td className="px-4 py-2.5 font-mono text-xs text-[#1B4332]">{w.code}</td>
-                    <td className="px-4 py-2.5 font-mono text-xs text-[#55665C] tabular-nums">
-                      {formatDateId(w.recordedAt)}
+                {filteredWaste.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="p-6">
+                      <EmptyStatePanel
+                        title="Belum ada data sampah masuk"
+                        description="Rekapitulasi sampah masuk akan tampil setelah ada pencatatan aktual."
+                      />
                     </td>
-                    <td className="px-4 py-2.5 font-medium text-[#14201A]">{w.name}</td>
-                    <td className="px-4 py-2.5 text-[#3E4E45]">
-                      {categoryMap.get(w.categoryId)?.name}
-                    </td>
-                    <td className="px-4 py-2.5">
-                      <WasteTypeText type={w.type} />
-                    </td>
-                    <td className="px-4 py-2.5 text-right font-mono font-semibold text-[#14201A] tabular-nums">
-                      {formatWeight(w.weightKg)}
-                    </td>
-                    <td className="px-4 py-2.5 text-[#3E4E45]">{w.sourceLocation}</td>
                   </tr>
-                ))}
+                ) : (
+                  filteredWaste.map((w) => (
+                    <tr key={w.id} className="hover:bg-[#FAFBF9]">
+                      <td className="px-4 py-2.5 font-mono text-xs text-[#1B4332]">{w.code}</td>
+                      <td className="px-4 py-2.5 font-mono text-xs text-[#55665C] tabular-nums">
+                        {formatDateId(w.recordedAt)}
+                      </td>
+                      <td className="px-4 py-2.5 font-medium text-[#14201A]">{w.name}</td>
+                      <td className="px-4 py-2.5 text-[#3E4E45]">
+                        {categoryMap.get(w.categoryId)?.name || '-'}
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <WasteTypeText type={w.type} />
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-mono font-semibold text-[#14201A] tabular-nums">
+                        {formatWeight(w.weightKg)}
+                      </td>
+                      <td className="px-4 py-2.5 text-[#3E4E45]">{w.sourceLocation}</td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           )}
@@ -395,24 +430,35 @@ export const ReportsPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#E6ECE7]">
-                {categoryBreakdown.map(({ category, count, totalKg }) => (
-                  <tr key={category.id} className="hover:bg-[#FAFBF9]">
-                    <td className="px-4 py-2.5 font-mono text-xs text-[#1B4332]">
-                      {category.code}
-                    </td>
-                    <td className="px-4 py-2.5 font-medium text-[#14201A]">{category.name}</td>
-                    <td className="px-4 py-2.5">
-                      <WasteTypeText type={category.type} />
-                    </td>
-                    <td className="px-4 py-2.5 text-[#3E4E45]">{category.standardMethod}</td>
-                    <td className="px-4 py-2.5 text-right font-mono text-[#3E4E45] tabular-nums">
-                      {count}
-                    </td>
-                    <td className="px-4 py-2.5 text-right font-mono font-semibold text-[#14201A] tabular-nums">
-                      {formatWeight(totalKg)}
+                {categoryBreakdown.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="p-6">
+                      <EmptyStatePanel
+                        title="Belum ada data kategori"
+                        description="Tambahkan kategori sampah terlebih dahulu untuk melihat rekapitulasi berdasarkan kategori."
+                      />
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  categoryBreakdown.map(({ category, count, totalKg }) => (
+                    <tr key={category.id} className="hover:bg-[#FAFBF9]">
+                      <td className="px-4 py-2.5 font-mono text-xs text-[#1B4332]">
+                        {category.code}
+                      </td>
+                      <td className="px-4 py-2.5 font-medium text-[#14201A]">{category.name}</td>
+                      <td className="px-4 py-2.5">
+                        <WasteTypeText type={category.type} />
+                      </td>
+                      <td className="px-4 py-2.5 text-[#3E4E45]">{category.standardMethod}</td>
+                      <td className="px-4 py-2.5 text-right font-mono text-[#3E4E45] tabular-nums">
+                        {count}
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-mono font-semibold text-[#14201A] tabular-nums">
+                        {formatWeight(totalKg)}
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           )}
@@ -431,25 +477,36 @@ export const ReportsPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#E6ECE7]">
-                {filteredProcessing.map((p) => (
-                  <tr key={p.id} className="hover:bg-[#FAFBF9]">
-                    <td className="px-4 py-2.5 font-mono text-xs text-[#1B4332]">{p.code}</td>
-                    <td className="px-4 py-2.5 font-medium text-[#14201A]">
-                      {wasteMap.get(p.wasteRecordId)?.name || '-'}
+                {filteredProcessing.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="p-6">
+                      <EmptyStatePanel
+                        title="Belum ada data pengolahan"
+                        description="Rekapitulasi pengolahan akan muncul setelah ada proses pengolahan sampah yang dicatat."
+                      />
                     </td>
-                    <td className="px-4 py-2.5 text-[#3E4E45]">{p.method}</td>
-                    <td className="px-4 py-2.5 text-right font-mono font-semibold text-[#14201A] tabular-nums">
-                      {formatWeight(p.processedWeightKg)}
-                    </td>
-                    <td className="px-4 py-2.5">
-                      <ProcessingStatusText status={p.status} />
-                    </td>
-                    <td className="px-4 py-2.5 font-mono text-xs text-[#55665C] tabular-nums">
-                      {formatDateId(p.processedAt)}
-                    </td>
-                    <td className="px-4 py-2.5 text-[#3E4E45]">{p.result}</td>
                   </tr>
-                ))}
+                ) : (
+                  filteredProcessing.map((p) => (
+                    <tr key={p.id} className="hover:bg-[#FAFBF9]">
+                      <td className="px-4 py-2.5 font-mono text-xs text-[#1B4332]">{p.code}</td>
+                      <td className="px-4 py-2.5 font-medium text-[#14201A]">
+                        {wasteMap.get(p.wasteRecordId)?.name || '-'}
+                      </td>
+                      <td className="px-4 py-2.5 text-[#3E4E45]">{p.method}</td>
+                      <td className="px-4 py-2.5 text-right font-mono font-semibold text-[#14201A] tabular-nums">
+                        {formatWeight(p.processedWeightKg)}
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <ProcessingStatusText status={p.status} />
+                      </td>
+                      <td className="px-4 py-2.5 font-mono text-xs text-[#55665C] tabular-nums">
+                        {formatDateId(p.processedAt)}
+                      </td>
+                      <td className="px-4 py-2.5 text-[#3E4E45]">{p.result}</td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           )}

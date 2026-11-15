@@ -35,9 +35,9 @@ import {
   getMonthKey,
 } from '../utils/formatters';
 
-const STORAGE_KEY = 'ecotrack_prototype_db_v1';
-const AUTH_LOCAL_KEY = 'ecotrack_auth_user_local';
-const AUTH_SESSION_KEY = 'ecotrack_auth_user_session';
+const STORAGE_KEY = 'ecotrack_app_db_v3';
+const AUTH_LOCAL_KEY = 'ecotrack_auth_user_local_v3';
+const AUTH_SESSION_KEY = 'ecotrack_auth_user_session_v3';
 
 interface PersistedDb {
   users: User[];
@@ -65,11 +65,24 @@ export interface WasteAllocationInfo {
   processingCount: number;
 }
 
+export type DataLoadStatus = 'ready' | 'loading' | 'error';
+
 interface EcoTrackContextValue {
   currentUser: PublicUser | null;
+  hasAnyUser: boolean;
+  dataStatus: DataLoadStatus;
+  dataError: string | null;
+  retryLoadData: () => void;
+
   activeRoute: AppRoute;
   navigateTo: (route: AppRoute) => void;
   login: (identifier: string, password: string, rememberMe: boolean) => ApiResponse<PublicUser>;
+  bootstrapFirstAdmin: (input: {
+    fullName: string;
+    username: string;
+    email: string;
+    password: string;
+  }) => ApiResponse<PublicUser>;
   logout: () => void;
 
   users: User[];
@@ -136,6 +149,7 @@ interface EcoTrackContextValue {
   updateSystemSettings: (input: SystemSettings) => ApiResponse<SystemSettings>;
   toggleEventRsvp: (eventId: string) => ApiResponse<SchoolEvent>;
   resetDemoData: () => ApiResponse<null>;
+  resetAllAccountsAndData: () => ApiResponse<null>;
 
   // Derived analytics
   metrics: {
@@ -161,18 +175,7 @@ interface EcoTrackContextValue {
 
 const EcoTrackContext = createContext<EcoTrackContextValue | null>(null);
 
-function loadInitialDb(): PersistedDb {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw) as PersistedDb;
-      if (parsed.users && parsed.categories && parsed.wasteRecords && parsed.processingRecords) {
-        return parsed;
-      }
-    }
-  } catch {
-    // fallback to seed
-  }
+function createEmptyDb(): PersistedDb {
   return {
     users: SEED_USERS,
     categories: SEED_CATEGORIES,
@@ -184,13 +187,65 @@ function loadInitialDb(): PersistedDb {
   };
 }
 
+function loadInitialDb(): { db: PersistedDb; error: string | null } {
+  try {
+    localStorage.removeItem('ecotrack_prototype_db_v1');
+    localStorage.removeItem('ecotrack_app_db_v2');
+    localStorage.removeItem('ecotrack_auth_user_local');
+    localStorage.removeItem('ecotrack_auth_user_local_v2');
+    sessionStorage.removeItem('ecotrack_auth_user_session');
+    sessionStorage.removeItem('ecotrack_auth_user_session_v2');
+
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) {
+      return { db: createEmptyDb(), error: null };
+    }
+    const parsed = JSON.parse(raw) as PersistedDb;
+    if (
+      !parsed ||
+      !Array.isArray(parsed.users) ||
+      !Array.isArray(parsed.categories) ||
+      !Array.isArray(parsed.wasteRecords) ||
+      !Array.isArray(parsed.processingRecords)
+    ) {
+      return {
+        db: createEmptyDb(),
+        error: 'Struktur penyimpanan lokal tidak valid dan gagal dibaca.',
+      };
+    }
+    return {
+      db: {
+        users: parsed.users,
+        categories: parsed.categories,
+        wasteRecords: parsed.wasteRecords,
+        processingRecords: parsed.processingRecords,
+        activities: Array.isArray(parsed.activities) ? parsed.activities : [],
+        events: Array.isArray(parsed.events) ? parsed.events : [],
+        settings: parsed.settings || SEED_SETTINGS,
+      },
+      error: null,
+    };
+  } catch {
+    return {
+      db: createEmptyDb(),
+      error: 'Gagal membaca data aplikasi dari penyimpanan lokal.',
+    };
+  }
+}
+
 function toPublicUser(user: User): PublicUser {
   const { password: _removed, ...rest } = user;
   return rest;
 }
 
 export const EcoTrackProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [db, setDb] = useState<PersistedDb>(() => loadInitialDb());
+  const initial = useMemo(() => loadInitialDb(), []);
+  const [db, setDb] = useState<PersistedDb>(initial.db);
+  const [dataStatus, setDataStatus] = useState<DataLoadStatus>(
+    initial.error ? 'error' : 'ready'
+  );
+  const [dataError, setDataError] = useState<string | null>(initial.error);
+
   const [currentUserId, setCurrentUserId] = useState<string | null>(() => {
     return localStorage.getItem(AUTH_LOCAL_KEY) || sessionStorage.getItem(AUTH_SESSION_KEY) || null;
   });
@@ -198,12 +253,26 @@ export const EcoTrackProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
   useEffect(() => {
+    if (dataStatus !== 'ready') return;
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
     } catch {
       // ignore storage quota errors
     }
-  }, [db]);
+  }, [db, dataStatus]);
+
+  const retryLoadData = useCallback(() => {
+    setDataStatus('loading');
+    const result = loadInitialDb();
+    if (result.error) {
+      setDataError(result.error);
+      setDataStatus('error');
+    } else {
+      setDb(result.db);
+      setDataError(null);
+      setDataStatus('ready');
+    }
+  }, []);
 
   const currentUser = useMemo<PublicUser | null>(() => {
     if (!currentUserId) return null;
@@ -263,6 +332,14 @@ export const EcoTrackProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         };
       }
 
+      if (db.users.length === 0) {
+        return {
+          success: false,
+          statusCode: 404,
+          message: 'Belum ada akun pengguna terdaftar. Silakan buat akun Administrator pertama.',
+        };
+      }
+
       const matched = db.users.find(
         (u) => u.email.toLowerCase() === cleanId || u.username.toLowerCase() === cleanId
       );
@@ -300,6 +377,70 @@ export const EcoTrackProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       };
     },
     [db.users]
+  );
+
+  /**
+   * Inisialisasi akun Administrator pertama hanya diizinkan saat belum ada satu pun akun
+   * di dalam sistem (bukan registrasi publik).
+   */
+  const bootstrapFirstAdmin = useCallback(
+    (input: {
+      fullName: string;
+      username: string;
+      email: string;
+      password: string;
+    }): ApiResponse<PublicUser> => {
+      if (db.users.length > 0) {
+        return {
+          success: false,
+          statusCode: 403,
+          message: 'Sistem sudah memiliki pengguna. Hubungi Administrator untuk pembuatan akun.',
+        };
+      }
+      if (!input.fullName.trim() || !input.username.trim() || !input.email.trim()) {
+        return {
+          success: false,
+          statusCode: 400,
+          message: 'Nama lengkap, username, dan email wajib diisi.',
+        };
+      }
+      if (input.password.length < 6) {
+        return {
+          success: false,
+          statusCode: 400,
+          message: 'Password minimal 6 karakter.',
+        };
+      }
+
+      const firstAdmin: User = {
+        id: `usr-${Date.now()}`,
+        fullName: input.fullName.trim(),
+        username: input.username.trim(),
+        email: input.email.trim(),
+        password: input.password,
+        role: UserRole.ADMIN,
+        status: UserStatus.AKTIF,
+        classOrUnit: 'Administrator Sekolah',
+        createdAt: new Date().toISOString(),
+      };
+
+      setDb((prev) => ({
+        ...prev,
+        users: [firstAdmin],
+      }));
+      setCurrentUserId(firstAdmin.id);
+      setActiveRoute('dashboard');
+      localStorage.setItem(AUTH_LOCAL_KEY, firstAdmin.id);
+      setDataStatus('ready');
+      setDataError(null);
+
+      return {
+        success: true,
+        statusCode: 201,
+        data: toPublicUser(firstAdmin),
+      };
+    },
+    [db.users.length]
   );
 
   const logout = useCallback(() => {
@@ -977,15 +1118,33 @@ export const EcoTrackProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const resetDemoData = useCallback((): ApiResponse<null> => {
     return authorizeAction(currentUser, 'settings:manage', () => {
+      const currentAdmin = db.users.find((u) => u.id === currentUser!.id);
       setDb({
-        users: SEED_USERS,
-        categories: SEED_CATEGORIES,
-        wasteRecords: SEED_WASTE_RECORDS,
-        processingRecords: SEED_PROCESSING_RECORDS,
-        activities: SEED_ACTIVITIES,
-        events: SEED_EVENTS,
+        users: currentAdmin ? [currentAdmin] : [],
+        categories: [],
+        wasteRecords: [],
+        processingRecords: [],
+        activities: [],
+        events: [],
         settings: SEED_SETTINGS,
       });
+      return null;
+    });
+  }, [currentUser, db.users]);
+
+  const resetAllAccountsAndData = useCallback((): ApiResponse<null> => {
+    return authorizeAction(currentUser, 'settings:manage', () => {
+      const empty = createEmptyDb();
+      setDb(empty);
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(empty));
+      } catch {
+        // ignore storage quota errors
+      }
+      setCurrentUserId(null);
+      setActiveRoute('dashboard');
+      localStorage.removeItem(AUTH_LOCAL_KEY);
+      sessionStorage.removeItem(AUTH_SESSION_KEY);
       return null;
     });
   }, [currentUser]);
@@ -1062,9 +1221,14 @@ export const EcoTrackProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const value: EcoTrackContextValue = {
     currentUser,
+    hasAnyUser: db.users.length > 0,
+    dataStatus,
+    dataError,
+    retryLoadData,
     activeRoute,
     navigateTo,
     login,
+    bootstrapFirstAdmin,
     logout,
     users: db.users,
     categories: db.categories,
@@ -1097,6 +1261,7 @@ export const EcoTrackProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     updateSystemSettings,
     toggleEventRsvp,
     resetDemoData,
+    resetAllAccountsAndData,
     metrics,
   };
 

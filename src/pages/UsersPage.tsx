@@ -15,6 +15,7 @@ import { formatDateId } from '../utils/formatters';
 import { Modal } from '../components/ui/Modal';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { UserStatusText } from '../components/ui/StatusIndicator';
+import { DataErrorBanner, EmptyStatePanel } from '../components/ui/DataStateNotice';
 
 const ROLE_LABEL: Record<UserRole, string> = {
   ADMIN: 'Admin',
@@ -25,6 +26,9 @@ const ROLE_LABEL: Record<UserRole, string> = {
 export const UsersPage: React.FC = () => {
   const {
     currentUser,
+    dataStatus,
+    dataError,
+    retryLoadData,
     users,
     addUser,
     updateUser,
@@ -169,6 +173,10 @@ export const UsersPage: React.FC = () => {
 
   return (
     <div className="space-y-5">
+      {dataStatus === 'error' && dataError && (
+        <DataErrorBanner message={dataError} onRetry={retryLoadData} />
+      )}
+
       {/* Toolbar */}
       <div className="flex flex-col gap-3 rounded-xl border border-[#DCE4DE] bg-white p-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-center">
@@ -230,7 +238,16 @@ export const UsersPage: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-[#E6ECE7]">
-              {filteredUsers.length === 0 ? (
+              {users.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="p-6">
+                    <EmptyStatePanel
+                      title="Belum ada data pengguna"
+                      description="Tambahkan akun Petugas dan Siswa untuk mulai mengoperasikan sistem."
+                    />
+                  </td>
+                </tr>
+              ) : filteredUsers.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-4 py-10 text-center text-sm text-[#55665C]">
                     Tidak ada pengguna yang sesuai filter.
@@ -327,7 +344,7 @@ export const UsersPage: React.FC = () => {
               required
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
-              placeholder="Nama lengkap beserta gelar / kelas"
+              placeholder="Nama lengkap"
               className="w-full rounded-lg border border-[#CFDAD2] px-3 py-2 text-sm text-[#14201A]"
             />
           </div>
@@ -340,7 +357,7 @@ export const UsersPage: React.FC = () => {
                 required
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="contoh: petugas.andi"
+                placeholder="username"
                 className="w-full rounded-lg border border-[#CFDAD2] px-3 py-2 font-mono text-sm text-[#14201A]"
               />
             </div>
@@ -352,7 +369,7 @@ export const UsersPage: React.FC = () => {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="andi@ecotrack.test"
+                placeholder="email@sekolah.sch.id"
                 className="w-full rounded-lg border border-[#CFDAD2] px-3 py-2 font-mono text-sm text-[#14201A]"
               />
             </div>
@@ -381,7 +398,7 @@ export const UsersPage: React.FC = () => {
                 type="text"
                 value={classOrUnit}
                 onChange={(e) => setClassOrUnit(e.target.value)}
-                placeholder="Contoh: XI IPA 1 / Unit TPS3R"
+                placeholder="Kelas atau unit kerja"
                 className="w-full rounded-lg border border-[#CFDAD2] px-3 py-2 text-sm text-[#14201A]"
               />
             </div>

@@ -8,6 +8,7 @@ import { Modal } from '../components/ui/Modal';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { ProcessingStatusText } from '../components/ui/StatusIndicator';
 import { Pagination } from '../components/ui/Pagination';
+import { DataErrorBanner, EmptyStatePanel } from '../components/ui/DataStateNotice';
 
 const PROCESSING_METHODS = [
   'Komposting Aerob',
@@ -23,6 +24,9 @@ const PROCESSING_METHODS = [
 export const ProcessingPage: React.FC = () => {
   const {
     currentUser,
+    dataStatus,
+    dataError,
+    retryLoadData,
     wasteRecords,
     categories,
     processingRecords,
@@ -30,18 +34,19 @@ export const ProcessingPage: React.FC = () => {
     addProcessingRecord,
     updateProcessingRecord,
     deleteProcessingRecord,
+    navigateTo,
     pushToast,
   } = useEcoTrack();
 
   const canWrite = hasPermission(currentUser, 'processing:write');
   const canDelete = hasPermission(currentUser, 'processing:delete');
+  const canWriteWaste = hasPermission(currentUser, 'waste:write');
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | ProcessingStatus>('ALL');
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 8;
 
-  // Create form state
   const availableWaste = useMemo(
     () =>
       wasteRecords.filter((w) => getWasteAllocation(w.id).remainingWeightKg > 0),
@@ -55,11 +60,10 @@ export const ProcessingPage: React.FC = () => {
   const [method, setMethod] = useState(PROCESSING_METHODS[0]);
   const [resultText, setResultText] = useState('');
   const [status, setStatus] = useState<ProcessingStatus>(ProcessingStatus.DIPROSES);
-  const [processedAt, setProcessedAt] = useState('2026-11-14');
+  const [processedAt, setProcessedAt] = useState(() => new Date().toISOString().slice(0, 10));
   const [notes, setNotes] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
 
-  // Edit / Detail / Delete modals
   const [editingRecord, setEditingRecord] = useState<ProcessingRecord | null>(null);
   const [editWeight, setEditWeight] = useState('');
   const [editMethod, setEditMethod] = useState('');
@@ -215,6 +219,10 @@ export const ProcessingPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {dataStatus === 'error' && dataError && (
+        <DataErrorBanner message={dataError} onRetry={retryLoadData} />
+      )}
+
       {/* Processing Form Panel */}
       {canWrite && (
         <section className="rounded-xl border border-[#DCE4DE] bg-white p-5">
@@ -231,7 +239,33 @@ export const ProcessingPage: React.FC = () => {
             <Plus className="h-4 w-4 text-[#2D6A4F]" />
           </div>
 
-          {availableWaste.length === 0 ? (
+          {wasteRecords.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-[#CFDAD2] bg-[#FAFBF9] p-5">
+              <p className="text-sm font-semibold text-[#14201A]">
+                Petunjuk Memulai Pencatatan Pengolahan
+              </p>
+              <ol className="mt-2 space-y-1.5 text-xs text-[#3E4E45]">
+                <li>
+                  1. Pastikan kategori sampah sudah dibuat oleh Administrator di menu Kategori
+                  Sampah.
+                </li>
+                <li>2. Catat sampah masuk terlebih dahulu melalui menu Data Sampah.</li>
+                <li>
+                  3. Kembali ke halaman ini untuk memilih catatan sampah, menentukan berat olah,
+                  metode, serta status pengolahan.
+                </li>
+              </ol>
+              {canWriteWaste && (
+                <button
+                  type="button"
+                  onClick={() => navigateTo('waste-data')}
+                  className="mt-4 inline-flex items-center gap-2 rounded-lg bg-[#1B4332] px-3.5 py-2 text-xs font-medium text-white hover:bg-[#132A1F]"
+                >
+                  <span>Buka Data Sampah</span>
+                </button>
+              )}
+            </div>
+          ) : availableWaste.length === 0 ? (
             <div className="rounded-lg bg-[#F6F8F6] p-5 text-sm text-[#55665C]">
               Seluruh catatan sampah masuk saat ini sudah dialokasikan 100% ke dalam riwayat
               pengolahan. Tambahkan data sampah masuk baru jika ingin membuat batch pengolahan baru.
@@ -266,7 +300,6 @@ export const ProcessingPage: React.FC = () => {
                   </select>
                 </div>
 
-                {/* Live Weight Balance Readout */}
                 {selectedWaste && selectedAlloc && (
                   <div className="grid grid-cols-3 gap-3 rounded-lg border border-[#E6ECE7] bg-[#FAFBF9] px-4 py-2.5 lg:col-span-6">
                     <div>
@@ -367,7 +400,7 @@ export const ProcessingPage: React.FC = () => {
                     required
                     value={resultText}
                     onChange={(e) => setResultText(e.target.value)}
-                    placeholder="Contoh: 15 kg kompos siap pakai / disetor ke bank sampah mitra"
+                    placeholder="Masukkan rencana atau hasil pengolahan"
                     className="w-full rounded-lg border border-[#CFDAD2] px-3 py-2 text-sm text-[#14201A] focus:border-[#2D6A4F] focus:outline-none"
                   />
                 </div>
@@ -467,10 +500,19 @@ export const ProcessingPage: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-[#E6ECE7]">
-              {paginatedHistory.length === 0 ? (
+              {processingRecords.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="p-6">
+                    <EmptyStatePanel
+                      title="Belum ada data pengolahan"
+                      description="Riwayat pengolahan sampah masih kosong. Mulai pencatatan pengolahan dengan memilih catatan sampah masuk yang tersedia pada formulir di atas."
+                    />
+                  </td>
+                </tr>
+              ) : paginatedHistory.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-4 py-10 text-center text-sm text-[#55665C]">
-                    Belum ada riwayat pengolahan untuk filter yang dipilih.
+                    Tidak ada riwayat pengolahan untuk filter yang dipilih.
                   </td>
                 </tr>
               ) : (

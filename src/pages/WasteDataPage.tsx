@@ -15,23 +15,29 @@ import { Modal } from '../components/ui/Modal';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { Pagination } from '../components/ui/Pagination';
 import { WasteTypeText } from '../components/ui/StatusIndicator';
+import { DataErrorBanner, EmptyStatePanel } from '../components/ui/DataStateNotice';
 
 type SortField = 'recordedAt' | 'weightKg' | 'name' | 'code';
 
 export const WasteDataPage: React.FC = () => {
   const {
     currentUser,
+    dataStatus,
+    dataError,
+    retryLoadData,
     wasteRecords,
     categories,
     getWasteAllocation,
     addWasteRecord,
     updateWasteRecord,
     deleteWasteRecord,
+    navigateTo,
     pushToast,
   } = useEcoTrack();
 
   const canWrite = hasPermission(currentUser, 'waste:write');
   const canDelete = hasPermission(currentUser, 'waste:delete');
+  const canManageCategories = hasPermission(currentUser, 'category:write');
 
   const [search, setSearch] = useState('');
   const [filterCategory, setFilterCategory] = useState('ALL');
@@ -43,18 +49,16 @@ export const WasteDataPage: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 8;
 
-  // Modals state
   const [formOpen, setFormOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState<WasteRecord | null>(null);
   const [detailRecord, setDetailRecord] = useState<WasteRecord | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<WasteRecord | null>(null);
 
-  // Form fields
   const [formName, setFormName] = useState('');
   const [formCategoryId, setFormCategoryId] = useState(categories[0]?.id || '');
   const [formWeight, setFormWeight] = useState('');
   const [formLocation, setFormLocation] = useState('');
-  const [formDate, setFormDate] = useState('2026-11-14');
+  const [formDate, setFormDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [formNotes, setFormNotes] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -125,7 +129,7 @@ export const WasteDataPage: React.FC = () => {
     setFormCategoryId(categories[0]?.id || '');
     setFormWeight('');
     setFormLocation('');
-    setFormDate('2026-11-14');
+    setFormDate(new Date().toISOString().slice(0, 10));
     setFormNotes('');
     setFormError(null);
     setFormOpen(true);
@@ -209,6 +213,10 @@ export const WasteDataPage: React.FC = () => {
 
   return (
     <div className="space-y-5">
+      {dataStatus === 'error' && dataError && (
+        <DataErrorBanner message={dataError} onRetry={retryLoadData} />
+      )}
+
       {/* Toolbar */}
       <div className="rounded-xl border border-[#DCE4DE] bg-white p-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -361,10 +369,31 @@ export const WasteDataPage: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-[#E6ECE7]">
-              {paginatedRecords.length === 0 ? (
+              {wasteRecords.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="p-6">
+                    <EmptyStatePanel
+                      title="Belum ada data sampah"
+                      description="Belum ada pencatatan sampah masuk. Tambahkan catatan baru untuk mulai memantau timbulan sampah sekolah."
+                      action={
+                        canWrite ? (
+                          <button
+                            type="button"
+                            onClick={openCreateModal}
+                            className="inline-flex items-center gap-2 rounded-lg bg-[#1B4332] px-4 py-2 text-xs font-medium text-white hover:bg-[#132A1F]"
+                          >
+                            <Plus className="h-3.5 w-3.5" />
+                            <span>Tambah Data Sampah</span>
+                          </button>
+                        ) : undefined
+                      }
+                    />
+                  </td>
+                </tr>
+              ) : paginatedRecords.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-4 py-10 text-center text-sm text-[#55665C]">
-                    Tidak ada catatan sampah yang sesuai dengan filter saat ini.
+                    Tidak ada data sampah yang sesuai dengan filter pencarian.
                   </td>
                 </tr>
               ) : (
@@ -457,116 +486,146 @@ export const WasteDataPage: React.FC = () => {
         title={editingRecord ? `Edit Data Sampah (${editingRecord.code})` : 'Tambah Data Sampah Masuk'}
         subtitle="Kode sampah dibuat secara otomatis sesuai tanggal pencatatan."
       >
-        <form onSubmit={handleSave} className="space-y-4">
-          {formError && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
-              {formError}
-            </div>
-          )}
-
-          <div>
-            <label className="mb-1 block text-xs font-medium text-[#3E4E45]">Nama Sampah *</label>
-            <input
-              type="text"
-              required
-              value={formName}
-              onChange={(e) => setFormName(e.target.value)}
-              placeholder="Contoh: Sisa sayuran dan nasi kantin"
-              className="w-full rounded-lg border border-[#CFDAD2] px-3 py-2 text-sm text-[#14201A] focus:border-[#2D6A4F] focus:outline-none"
-            />
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-[#3E4E45]">
-                Kategori Sampah *
-              </label>
-              <select
-                value={formCategoryId}
-                onChange={(e) => setFormCategoryId(e.target.value)}
-                className="w-full rounded-lg border border-[#CFDAD2] bg-white px-3 py-2 text-sm text-[#14201A] focus:border-[#2D6A4F] focus:outline-none"
+        {categories.length === 0 ? (
+          <div className="space-y-4">
+            <p className="text-sm text-[#3E4E45]">
+              Kategori sampah belum tersedia. Tambahkan minimal satu kategori sampah sebelum
+              mencatat data sampah masuk.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setFormOpen(false)}
+                className="rounded-lg border border-[#D8E2DC] px-4 py-2 text-sm font-medium text-[#3E4E45]"
               >
-                {categories.map((cat) => (
-                  <option key={cat.id} value={cat.id}>
-                    {cat.name} — {cat.type === WasteType.ORGANIK ? 'Organik' : 'Anorganik'}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="mb-1 block text-xs font-medium text-[#3E4E45]">
-                Berat (kg) *
-              </label>
-              <input
-                type="number"
-                step="0.1"
-                min="0.1"
-                required
-                value={formWeight}
-                onChange={(e) => setFormWeight(e.target.value)}
-                placeholder="0.0"
-                className="w-full rounded-lg border border-[#CFDAD2] px-3 py-2 font-mono text-sm text-[#14201A] focus:border-[#2D6A4F] focus:outline-none"
-              />
+                Tutup
+              </button>
+              {canManageCategories && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFormOpen(false);
+                    navigateTo('categories');
+                  }}
+                  className="rounded-lg bg-[#1B4332] px-4 py-2 text-sm font-medium text-white hover:bg-[#132A1F]"
+                >
+                  Buka Kategori Sampah
+                </button>
+              )}
             </div>
           </div>
+        ) : (
+          <form onSubmit={handleSave} className="space-y-4">
+            {formError && (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+                {formError}
+              </div>
+            )}
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
-              <label className="mb-1 block text-xs font-medium text-[#3E4E45]">
-                Sumber / Lokasi *
-              </label>
+              <label className="mb-1 block text-xs font-medium text-[#3E4E45]">Nama Sampah *</label>
               <input
                 type="text"
                 required
-                value={formLocation}
-                onChange={(e) => setFormLocation(e.target.value)}
-                placeholder="Contoh: Kantin Utama / Gedung B"
+                value={formName}
+                onChange={(e) => setFormName(e.target.value)}
+                placeholder="Masukkan nama sampah"
                 className="w-full rounded-lg border border-[#CFDAD2] px-3 py-2 text-sm text-[#14201A] focus:border-[#2D6A4F] focus:outline-none"
               />
             </div>
 
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-[#3E4E45]">
+                  Kategori Sampah *
+                </label>
+                <select
+                  value={formCategoryId || categories[0]?.id || ''}
+                  onChange={(e) => setFormCategoryId(e.target.value)}
+                  className="w-full rounded-lg border border-[#CFDAD2] bg-white px-3 py-2 text-sm text-[#14201A] focus:border-[#2D6A4F] focus:outline-none"
+                >
+                  {categories.map((cat) => (
+                    <option key={cat.id} value={cat.id}>
+                      {cat.name} — {cat.type === WasteType.ORGANIK ? 'Organik' : 'Anorganik'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-medium text-[#3E4E45]">
+                  Berat (kg) *
+                </label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0.1"
+                  required
+                  value={formWeight}
+                  onChange={(e) => setFormWeight(e.target.value)}
+                  placeholder="0.0"
+                  className="w-full rounded-lg border border-[#CFDAD2] px-3 py-2 font-mono text-sm text-[#14201A] focus:border-[#2D6A4F] focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-[#3E4E45]">
+                  Sumber / Lokasi *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={formLocation}
+                  onChange={(e) => setFormLocation(e.target.value)}
+                  placeholder="Masukkan lokasi sumber"
+                  className="w-full rounded-lg border border-[#CFDAD2] px-3 py-2 text-sm text-[#14201A] focus:border-[#2D6A4F] focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-medium text-[#3E4E45]">
+                  Tanggal Pencatatan *
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={formDate}
+                  onChange={(e) => setFormDate(e.target.value)}
+                  className="w-full rounded-lg border border-[#CFDAD2] px-3 py-2 font-mono text-sm text-[#14201A] focus:border-[#2D6A4F] focus:outline-none"
+                />
+              </div>
+            </div>
+
             <div>
-              <label className="mb-1 block text-xs font-medium text-[#3E4E45]">
-                Tanggal Pencatatan *
-              </label>
-              <input
-                type="date"
-                required
-                value={formDate}
-                onChange={(e) => setFormDate(e.target.value)}
-                className="w-full rounded-lg border border-[#CFDAD2] px-3 py-2 font-mono text-sm text-[#14201A] focus:border-[#2D6A4F] focus:outline-none"
+              <label className="mb-1 block text-xs font-medium text-[#3E4E45]">Keterangan</label>
+              <textarea
+                rows={3}
+                value={formNotes}
+                onChange={(e) => setFormNotes(e.target.value)}
+                placeholder="Catatan tambahan (opsional)..."
+                className="w-full rounded-lg border border-[#CFDAD2] px-3 py-2 text-sm text-[#14201A] focus:border-[#2D6A4F] focus:outline-none"
               />
             </div>
-          </div>
 
-          <div>
-            <label className="mb-1 block text-xs font-medium text-[#3E4E45]">Keterangan</label>
-            <textarea
-              rows={3}
-              value={formNotes}
-              onChange={(e) => setFormNotes(e.target.value)}
-              placeholder="Catatan kondisi sampah atau instruksi pemilahan..."
-              className="w-full rounded-lg border border-[#CFDAD2] px-3 py-2 text-sm text-[#14201A] focus:border-[#2D6A4F] focus:outline-none"
-            />
-          </div>
-
-          <div className="flex justify-end gap-2.5 border-t border-[#E6ECE7] pt-4">
-            <button
-              type="button"
-              onClick={() => setFormOpen(false)}
-              className="rounded-lg border border-[#D8E2DC] px-4 py-2 text-sm font-medium text-[#3E4E45] hover:bg-[#F6F8F6]"
-            >
-              Batal
-            </button>
-            <button
-              type="submit"
-              className="rounded-lg bg-[#1B4332] px-4 py-2 text-sm font-medium text-white hover:bg-[#132A1F]"
-            >
-              {editingRecord ? 'Simpan Perubahan' : 'Catat Sampah'}
-            </button>
-          </div>
-        </form>
+            <div className="flex justify-end gap-2.5 border-t border-[#E6ECE7] pt-4">
+              <button
+                type="button"
+                onClick={() => setFormOpen(false)}
+                className="rounded-lg border border-[#D8E2DC] px-4 py-2 text-sm font-medium text-[#3E4E45] hover:bg-[#F6F8F6]"
+              >
+                Batal
+              </button>
+              <button
+                type="submit"
+                className="rounded-lg bg-[#1B4332] px-4 py-2 text-sm font-medium text-white hover:bg-[#132A1F]"
+              >
+                {editingRecord ? 'Simpan Perubahan' : 'Catat Sampah'}
+              </button>
+            </div>
+          </form>
+        )}
       </Modal>
 
       {/* Detail Modal */}
@@ -578,7 +637,7 @@ export const WasteDataPage: React.FC = () => {
       >
         {detailRecord && (
           <div className="space-y-4 text-sm">
-            <div className="grid grid-cols-2 gap-4 rounded-xl bg-[#FAFBF9] p-4 border border-[#E6ECE7]">
+            <div className="grid grid-cols-2 gap-4 rounded-xl border border-[#E6ECE7] bg-[#FAFBF9] p-4">
               <div>
                 <p className="text-xs text-[#55665C]">Nama Sampah</p>
                 <p className="mt-0.5 font-medium text-[#14201A]">{detailRecord.name}</p>
@@ -586,7 +645,7 @@ export const WasteDataPage: React.FC = () => {
               <div>
                 <p className="text-xs text-[#55665C]">Kategori & Jenis</p>
                 <p className="mt-0.5 font-medium text-[#14201A]">
-                  {categoryMap.get(detailRecord.categoryId)?.name} (
+                  {categoryMap.get(detailRecord.categoryId)?.name || '-'} (
                   {detailRecord.type === WasteType.ORGANIK ? 'Organik' : 'Anorganik'})
                 </p>
               </div>
@@ -623,7 +682,6 @@ export const WasteDataPage: React.FC = () => {
         )}
       </Modal>
 
-      {/* Delete Confirmation */}
       <ConfirmDialog
         open={Boolean(deleteTarget)}
         onClose={() => setDeleteTarget(null)}

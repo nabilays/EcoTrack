@@ -61,7 +61,7 @@ export const EducationPage: React.FC = () => {
           />
         </div>
         <div className="inline-flex flex-wrap rounded-lg bg-[#EDF2EE] p-1">
-          {['ALL', 'Pemilahan', 'Komposting', 'Daur Ulang', 'Kebijakan Sekolah'].map((cat) => (
+          {['ALL', 'Pemilahan', 'Komposting', 'Daur Ulang'].map((cat) => (
             <button
               key={cat}
               type="button"
@@ -79,6 +79,11 @@ export const EducationPage: React.FC = () => {
       </div>
 
       {/* Articles Grid */}
+      {filtered.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-[#CFDAD2] bg-white p-8 text-center text-sm text-[#55665C]">
+          Tidak ada materi edukasi yang sesuai dengan pencarian Anda.
+        </div>
+      ) : (
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         {filtered.map((art) => (
           <article key={art.id} className="rounded-xl border border-[#DCE4DE] bg-white p-5">
@@ -108,6 +113,7 @@ export const EducationPage: React.FC = () => {
           </article>
         ))}
       </div>
+      )}
 
       {/* Interactive Sorting Practice */}
       <section className="rounded-xl border border-[#DCE4DE] bg-white p-5">
